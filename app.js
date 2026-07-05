@@ -42,6 +42,13 @@ const METRICS = [
     daily: "sum", chips: [250, 500] },
   { key: "steps",   name: "Steps",              unit: "",     step: "100", range: [0, 200000],
     daily: "last" },
+  { key: "distance", name: "Distance",          unit: "km",   step: "0.1", range: [0, 300],
+    daily: "last" },
+  { key: "energy",  name: "Active Energy",      unit: "kcal", step: "1",   range: [0, 10000],
+    daily: "last" },
+  { key: "exercise", name: "Exercise",          unit: "min",  step: "1",   range: [0, 1440],
+    daily: "last" },
+  { key: "workout", name: "Workouts",           unit: "min",  step: "1",   range: [0, 1440] },
 ];
 
 const byKey = Object.fromEntries(METRICS.map((m) => [m.key, m]));
@@ -54,6 +61,7 @@ function fmtNum(v) {
 
 function fmtValue(metric, e) {
   if (metric.bp) return `${e.sys}/${e.dia}`;
+  if (e.type) return `${e.type} ${fmtNum(e.v)}`; // synced workout: "Running 32"
   return fmtNum(e.v);
 }
 
@@ -327,8 +335,9 @@ function renderDetail(metric) {
   for (const e of recent) {
     const li = document.createElement("li");
     const label = document.createElement("span");
-    label.innerHTML = `<strong>${fmtValue(metric, e)}</strong> ${metric.unit} ` +
-      `<span class="entry-when">${fmtWhen(e.t)}</span>`;
+    label.innerHTML = `<strong>${fmtValue(metric, e)}</strong> ${metric.unit}` +
+      (e.kcal ? ` &middot; ${fmtNum(e.kcal)} kcal` : "") +
+      ` <span class="entry-when">${fmtWhen(e.t)}</span>`;
     const del = document.createElement("button");
     del.className = "entry-del";
     del.textContent = "Delete";
@@ -382,6 +391,143 @@ document.getElementById("import-file").addEventListener("change", (ev) => {
     }
     ev.target.value = "";
   });
+});
+
+/* ------------------------------------------------------------ health sync */
+
+// Imports the JSON that the "Health Sync" iOS Shortcut copies to the
+// clipboard (build steps in the README). Synced entries are tagged src:"h"
+// so re-importing the same day replaces them instead of duplicating them;
+// manually typed entries are never touched.
+
+const HEALTH_FIELDS = [
+  { metric: "steps",    keys: ["steps"] },
+  { metric: "distance", keys: ["distancekm", "distance"] },
+  { metric: "energy",   keys: ["activeenergykcal", "activeenergy", "energy"] },
+  { metric: "exercise", keys: ["exercisemin", "exercise"] },
+  { metric: "hr",       keys: ["restinghr", "restingheartrate", "hr"] },
+];
+
+// Shortcuts often emits values as text with units ("8,234 count", "6.2 km").
+function healthNum(v) {
+  if (v === undefined || v === null || v === "") return null;
+  const m = String(v).replace(/,/g, "").match(/-?\d+(\.\d+)?/);
+  const n = m ? parseFloat(m[0]) : NaN;
+  return Number.isFinite(n) ? n : null;
+}
+
+function localToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function upsertSynced(metricKey, date, newEntries) {
+  const kept = entriesFor(metricKey).filter((e) => !(e.src === "h" && dayOf(e.t) === date));
+  kept.push(...newEntries);
+  kept.sort((a, b) => (a.t < b.t ? -1 : a.t > b.t ? 1 : 0));
+  store.entries[metricKey] = kept;
+}
+
+// Accepts [{type, min, kcal}] or the pipe format the Shortcut builds
+// line by line: "Running|32|310".
+function parseWorkouts(raw) {
+  let list = raw;
+  if (typeof raw === "string") {
+    list = raw.split("\n").map((line) => {
+      const [type, min, kcal] = line.split("|");
+      return { type, min, kcal };
+    });
+  }
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const w of list) {
+    if (!w || typeof w !== "object") continue;
+    const v = healthNum(w.min ?? w.minutes ?? w.duration);
+    if (v === null || v <= 0 || v > 1440) continue;
+    const entry = { v };
+    const type = String(w.type ?? w.name ?? "").trim();
+    if (type) entry.type = type;
+    const kcal = healthNum(w.kcal ?? w.calories);
+    if (kcal !== null && kcal >= 0) entry.kcal = kcal;
+    out.push(entry);
+  }
+  return out;
+}
+
+function applyHealthDay(day) {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(day.date)) ? day.date : localToday();
+  const t = `${date}T12:00:00`;
+  const lower = {};
+  for (const [k, v] of Object.entries(day)) lower[k.toLowerCase().replace(/[\s_]/g, "")] = v;
+
+  const applied = [];
+  for (const f of HEALTH_FIELDS) {
+    const key = f.keys.find((k) => lower[k] !== undefined);
+    if (key === undefined) continue;
+    const v = healthNum(lower[key]);
+    const m = byKey[f.metric];
+    if (v === null || v < m.range[0] || v > m.range[1]) continue;
+    upsertSynced(f.metric, date, [{ t, v, src: "h" }]);
+    applied.push(m.name);
+  }
+
+  const workouts = parseWorkouts(lower.workouts ?? lower.workoutstext);
+  if (workouts.length) {
+    upsertSynced("workout", date, workouts.map((w) => ({ t, src: "h", ...w })));
+    applied.push(`${workouts.length} workout${workouts.length > 1 ? "s" : ""}`);
+  }
+  return { date, applied };
+}
+
+const syncEl = document.getElementById("sync");
+const syncResult = document.getElementById("sync-result");
+
+function importHealthText(text) {
+  let days;
+  try {
+    const data = JSON.parse(text);
+    days = Array.isArray(data) ? data : [data];
+    if (days.length === 0 || typeof days[0] !== "object" || days[0] === null) throw new Error("bad shape");
+  } catch (e) {
+    syncResult.textContent = "That doesn't look like Health Sync data. Run the shortcut first, then paste what it copied.";
+    return;
+  }
+  const lines = [];
+  for (const day of days) {
+    const { date, applied } = applyHealthDay(day);
+    lines.push(`${date}: ${applied.length ? applied.join(", ") : "nothing recognised"}`);
+  }
+  saveStore();
+  METRICS.forEach(refreshCard);
+  if (detailKey) renderDetail(byKey[detailKey]);
+  syncResult.textContent = "Imported — " + lines.join(" · ");
+}
+
+document.getElementById("sync-open").addEventListener("click", () => {
+  syncResult.textContent = "";
+  document.getElementById("sync-text").value = "";
+  syncEl.classList.remove("hidden");
+  syncEl.scrollTop = 0;
+});
+
+document.getElementById("sync-back").addEventListener("click", () => {
+  syncEl.classList.add("hidden");
+});
+
+document.getElementById("sync-paste").addEventListener("click", () => {
+  if (!navigator.clipboard || !navigator.clipboard.readText) {
+    syncResult.textContent = "Clipboard access isn't available here — paste into the box below instead.";
+    return;
+  }
+  navigator.clipboard.readText().then(importHealthText).catch(() => {
+    syncResult.textContent = "Couldn't read the clipboard — paste into the box below instead.";
+    document.getElementById("sync-text").focus();
+  });
+});
+
+document.getElementById("sync-import").addEventListener("click", () => {
+  const text = document.getElementById("sync-text").value.trim();
+  if (text) importHealthText(text);
 });
 
 /* ----------------------------------------------------------------- boot */

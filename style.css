@@ -205,4 +205,25 @@ footer { padding: 8px 18px calc(16px + env(safe-area-inset-bottom)); }
 
 .disclaimer { color: var(--muted); font-size: 12px; line-height: 1.5; margin: 0; }
 
+/* Health sync screen */
+.sync-help { color: var(--muted); font-size: 14px; line-height: 1.5; margin: 10px 2px; }
+.sync-help strong { color: var(--ink); }
+
+.sync-main-btn { width: 100%; padding: 12px; font-size: 15px; }
+
+#sync textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--card);
+  color: var(--ink);
+  font-size: 13px;
+  font-family: ui-monospace, Menlo, monospace;
+  padding: 10px;
+  margin-bottom: 8px;
+  resize: vertical;
+}
+
+.sync-result { font-size: 14px; line-height: 1.5; margin-top: 12px; padding: 0 2px; }
+
 .axis-label { fill: var(--muted); font-size: 10px; }

@@ -1,6 +1,6 @@
 // Cache-first service worker: the whole app shell is precached on install,
 // so the app works with no network at all. Bump VERSION on any file change.
-const VERSION = "v1";
+const VERSION = "v2";
 const CACHE = `healthlog-${VERSION}`;
 
 const ASSETS = [
