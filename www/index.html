@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Health Log</title>
+
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f2f2f7">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000">
+
+  <!-- iOS home-screen install -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Health Log">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+
+  <link rel="stylesheet" href="style.css">
+  <script src="healthkit-bridge.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Health Log</h1>
+    <div class="header-date" id="today-label"></div>
+  </header>
+
+  <main id="cards"></main>
+
+  <!-- Detail view (per-metric history) -->
+  <div id="detail" class="detail hidden">
+    <div class="detail-bar">
+      <button id="detail-back" class="link-btn">&larr; Back</button>
+      <h2 id="detail-title"></h2>
+      <span class="detail-spacer"></span>
+    </div>
+    <div id="detail-chart"></div>
+    <div id="detail-range-note" class="range-note"></div>
+    <ul id="detail-list" class="entry-list"></ul>
+  </div>
+
+  <!-- Health sync (import from the iOS Shortcut) -->
+  <div id="sync" class="detail hidden">
+    <div class="detail-bar">
+      <button id="sync-back" class="link-btn">&larr; Back</button>
+      <h2>Health Sync</h2>
+      <span class="detail-spacer"></span>
+    </div>
+    <p class="sync-help">Run your <strong>Health Sync</strong> shortcut (it copies today's
+    Apple Health data to the clipboard), come back here, and tap the button.
+    Re-syncing the same day updates it &mdash; no duplicates.
+    Don't have the shortcut yet? <a href="shortcut.html">Build it in 5 minutes &rarr;</a></p>
+    <button id="sync-paste" class="small-btn sync-main-btn">Paste from clipboard &amp; import</button>
+    <p class="sync-help">Or paste the copied text manually:</p>
+    <textarea id="sync-text" rows="6" placeholder='{"date":"2026-07-05","steps":8234,...}'></textarea>
+    <button id="sync-import" class="small-btn">Import pasted text</button>
+    <div id="sync-result" class="sync-result" role="status"></div>
+  </div>
+
+  <footer>
+    <div class="data-row">
+      <button id="healthkit-sync" class="small-btn" style="display:none">Sync HealthKit</button>
+      <button id="sync-open" class="small-btn">Health sync</button>
+      <button id="export-btn" class="small-btn">Export data</button>
+      <label class="small-btn" for="import-file">Import data</label>
+      <input type="file" id="import-file" accept="application/json" hidden>
+    </div>
+    <p class="disclaimer">Personal log for your own reference. Reference bands are
+    general context only &mdash; not medical advice or diagnosis.</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

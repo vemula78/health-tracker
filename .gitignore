@@ -1,0 +1,11 @@
+# macOS
+.DS_Store
+
+# Editor lock/temp files
+~$*
+
+# Xcode user state and build output
+ios/App/App.xcodeproj/xcuserdata/
+ios/App/App.xcodeproj/project.xcworkspace/xcuserdata/
+ios/App/DerivedData/
+ios/App/build/
