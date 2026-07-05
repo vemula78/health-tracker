@@ -1,0 +1,26 @@
+{
+  "name": "health-tracker",
+  "version": "1.0.0",
+  "description": "A single-page personal health tracker that installs to the iPhone home screen as a PWA and works fully offline. No backend, no account, no analytics — all data lives in this browser's localStorage on your device.",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vemula78/health-tracker.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/vemula78/health-tracker/issues"
+  },
+  "homepage": "https://github.com/vemula78/health-tracker#readme",
+  "dependencies": {
+    "@capacitor/cli": "^8.4.1",
+    "@capacitor/core": "^8.4.1",
+    "@capacitor/ios": "^8.4.1"
+  }
+}
