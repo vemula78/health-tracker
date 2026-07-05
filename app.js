@@ -1,0 +1,398 @@
+"use strict";
+
+/* ---------------------------------------------------------------- storage */
+
+const STORE_KEY = "healthlog.v1";
+
+function loadStore() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) { /* corrupted store: start fresh rather than crash */ }
+  return { entries: {} };
+}
+
+function saveStore() {
+  localStorage.setItem(STORE_KEY, JSON.stringify(store));
+}
+
+const store = loadStore();
+
+function entriesFor(key) {
+  if (!store.entries[key]) store.entries[key] = [];
+  return store.entries[key];
+}
+
+/* ---------------------------------------------------------------- metrics */
+
+// range: [min, max] sanity limits for input validation.
+// band: reference range drawn on charts (context only, no interpretation).
+// daily: "sum" aggregates a day's entries, "last" keeps the day's latest —
+//        charts for those show one point per day instead of per entry.
+const METRICS = [
+  { key: "weight",  name: "Weight",             unit: "kg",   step: "0.1", range: [20, 300] },
+  { key: "bp",      name: "Blood Pressure",     unit: "mmHg", bp: true,
+    band: { sys: [90, 120], dia: [60, 80] }, bandLabel: "Band: 90–120 / 60–80 mmHg" },
+  { key: "glucose", name: "Blood Glucose",      unit: "mg/dL", step: "1", range: [20, 600],
+    band: [70, 140], bandLabel: "Band: 70–140 mg/dL" },
+  { key: "hr",      name: "Resting Heart Rate", unit: "bpm",  step: "1", range: [25, 250],
+    band: [60, 100], bandLabel: "Band: 60–100 bpm" },
+  { key: "sleep",   name: "Sleep",              unit: "h",    step: "0.1", range: [0, 24] },
+  { key: "water",   name: "Water",              unit: "mL",   step: "50", range: [1, 5000],
+    daily: "sum", chips: [250, 500] },
+  { key: "steps",   name: "Steps",              unit: "",     step: "100", range: [0, 200000],
+    daily: "last" },
+];
+
+const byKey = Object.fromEntries(METRICS.map((m) => [m.key, m]));
+
+/* ------------------------------------------------------------- formatting */
+
+function fmtNum(v) {
+  return Number.isInteger(v) ? String(v) : String(Math.round(v * 10) / 10);
+}
+
+function fmtValue(metric, e) {
+  if (metric.bp) return `${e.sys}/${e.dia}`;
+  return fmtNum(e.v);
+}
+
+function fmtWhen(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short" }) +
+    " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
+function dayOf(iso) {
+  return iso.slice(0, 10);
+}
+
+/* ------------------------------------------------------------ chart data */
+
+// Points to chart: raw entries, or one point per day for daily metrics.
+function chartSeries(metric, count) {
+  const all = entriesFor(metric.key);
+  if (!metric.daily) return all.slice(-count);
+
+  const days = new Map();
+  for (const e of all) {
+    const day = dayOf(e.t);
+    if (metric.daily === "sum") {
+      const prev = days.get(day);
+      days.set(day, { t: e.t, v: (prev ? prev.v : 0) + e.v });
+    } else {
+      days.set(day, { t: e.t, v: e.v }); // "last": later entries overwrite
+    }
+  }
+  return [...days.values()].slice(-count);
+}
+
+function seriesValues(metric, series) {
+  if (metric.bp) return series.flatMap((e) => [e.sys, e.dia]);
+  return series.map((e) => e.v);
+}
+
+/* ------------------------------------------------------------- svg charts */
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function svgEl(tag, attrs) {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+function scaleY(v, lo, hi, height, pad) {
+  if (hi === lo) return height / 2;
+  return pad + (height - 2 * pad) * (1 - (v - lo) / (hi - lo));
+}
+
+function polyline(points, colour, width) {
+  return svgEl("polyline", {
+    points: points.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" "),
+    fill: "none",
+    stroke: colour,
+    "stroke-width": width,
+    "stroke-linecap": "round",
+    "stroke-linejoin": "round",
+  });
+}
+
+// Shared renderer for sparklines and the detail chart.
+function renderChart(metric, series, width, height, detail) {
+  const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, preserveAspectRatio: "none" });
+  const pad = detail ? 16 : 5;
+
+  if (series.length === 0) {
+    if (detail) {
+      const t = svgEl("text", { x: width / 2, y: height / 2, "text-anchor": "middle", class: "axis-label" });
+      t.textContent = "No entries yet";
+      svg.appendChild(t);
+    }
+    return svg;
+  }
+
+  // Y domain: data plus the reference band so the band is always visible.
+  let values = seriesValues(metric, series);
+  if (metric.band) {
+    values = values.concat(metric.bp ? [...metric.band.sys, ...metric.band.dia] : metric.band);
+  }
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+
+  const x = (i) =>
+    series.length === 1 ? width / 2 : pad + ((width - 2 * pad) * i) / (series.length - 1);
+  const y = (v) => scaleY(v, lo, hi, height, pad);
+
+  // Reference band(s) behind the data.
+  const bands = metric.band ? (metric.bp ? [metric.band.sys, metric.band.dia] : [metric.band]) : [];
+  for (const [bLo, bHi] of bands) {
+    svg.appendChild(svgEl("rect", {
+      x: 0, width, y: y(bHi), height: Math.max(y(bLo) - y(bHi), 1),
+      fill: "var(--band)",
+    }));
+  }
+
+  const strokeW = detail ? 2.5 : 2;
+  if (metric.bp) {
+    svg.appendChild(polyline(series.map((e, i) => [x(i), y(e.sys)]), "var(--spark)", strokeW));
+    svg.appendChild(polyline(series.map((e, i) => [x(i), y(e.dia)]), "#af52de", strokeW));
+  } else {
+    svg.appendChild(polyline(series.map((e, i) => [x(i), y(e.v)]), "var(--spark)", strokeW));
+  }
+
+  if (detail) {
+    // Min/max labels so the chart is readable without axes.
+    const top = svgEl("text", { x: 4, y: 12, class: "axis-label" });
+    top.textContent = fmtNum(hi);
+    const bottom = svgEl("text", { x: 4, y: height - 4, class: "axis-label" });
+    bottom.textContent = fmtNum(lo);
+    svg.appendChild(top);
+    svg.appendChild(bottom);
+
+    // Dots on each point.
+    const dot = (cx, cy, fill) => svgEl("circle", { cx, cy, r: 3, fill });
+    series.forEach((e, i) => {
+      if (metric.bp) {
+        svg.appendChild(dot(x(i), y(e.sys), "var(--spark)"));
+        svg.appendChild(dot(x(i), y(e.dia), "#af52de"));
+      } else {
+        svg.appendChild(dot(x(i), y(e.v), "var(--spark)"));
+      }
+    });
+  }
+
+  return svg;
+}
+
+/* ------------------------------------------------------------- main cards */
+
+const cardsEl = document.getElementById("cards");
+
+function latestLabel(metric) {
+  const series = chartSeries(metric, 1);
+  if (series.length === 0) return "no entries";
+  const e = series[series.length - 1];
+  const today = dayOf(new Date().toISOString()) === dayOf(new Date(e.t).toISOString());
+  const prefix = metric.daily === "sum" ? (today ? "today " : "last day ") : "";
+  return `${prefix}<strong>${fmtValue(metric, e)}</strong> ${metric.unit}`;
+}
+
+function buildCard(metric) {
+  const card = document.createElement("div");
+  card.className = "card";
+  card.id = `card-${metric.key}`;
+
+  const top = document.createElement("div");
+  top.className = "card-top";
+  top.innerHTML = `<span class="card-name">${metric.name}` +
+    (metric.unit ? ` <span class="card-latest">(${metric.unit})</span>` : "") +
+    `</span><span class="card-latest" id="latest-${metric.key}"></span>`;
+  card.appendChild(top);
+
+  const body = document.createElement("div");
+  body.className = "card-body";
+
+  const sparkWrap = document.createElement("div");
+  sparkWrap.className = "spark-wrap";
+  sparkWrap.id = `spark-${metric.key}`;
+  sparkWrap.addEventListener("click", () => openDetail(metric.key));
+  body.appendChild(sparkWrap);
+
+  const form = document.createElement("form");
+  form.className = "entry-form";
+  if (metric.bp) {
+    form.innerHTML =
+      `<input class="bp" type="number" inputmode="numeric" placeholder="120" aria-label="Systolic">` +
+      `<span class="bp-sep">/</span>` +
+      `<input class="bp" type="number" inputmode="numeric" placeholder="80" aria-label="Diastolic">`;
+  } else {
+    const mode = metric.step.includes(".") ? "decimal" : "numeric";
+    form.innerHTML =
+      `<input type="number" inputmode="${mode}" step="${metric.step}" placeholder="&ndash;" aria-label="${metric.name}">`;
+  }
+  const btn = document.createElement("button");
+  btn.type = "submit";
+  btn.className = "add-btn";
+  btn.textContent = "+";
+  btn.setAttribute("aria-label", `Add ${metric.name} entry`);
+  form.appendChild(btn);
+  form.addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    submitEntry(metric, form);
+  });
+  body.appendChild(form);
+  card.appendChild(body);
+
+  if (metric.chips) {
+    const chips = document.createElement("div");
+    chips.className = "chips";
+    for (const amount of metric.chips) {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "chip";
+      chip.textContent = `+${amount} ${metric.unit}`;
+      chip.addEventListener("click", () => {
+        addEntry(metric, { v: amount });
+        flash(card);
+      });
+      chips.appendChild(chip);
+    }
+    card.appendChild(chips);
+  }
+
+  cardsEl.appendChild(card);
+}
+
+function refreshCard(metric) {
+  document.getElementById(`latest-${metric.key}`).innerHTML = latestLabel(metric);
+  const wrap = document.getElementById(`spark-${metric.key}`);
+  wrap.replaceChildren(renderChart(metric, chartSeries(metric, 14), 200, 44, false));
+}
+
+function flash(card) {
+  card.classList.remove("saved-flash");
+  void card.offsetWidth; // restart the animation
+  card.classList.add("saved-flash");
+}
+
+function submitEntry(metric, form) {
+  const inputs = form.querySelectorAll("input");
+  if (metric.bp) {
+    const sys = Number(inputs[0].value);
+    const dia = Number(inputs[1].value);
+    if (!inputs[0].value || !inputs[1].value || sys < 40 || sys > 300 || dia < 20 || dia > 200 || dia >= sys) return;
+    addEntry(metric, { sys, dia });
+  } else {
+    const v = Number(inputs[0].value);
+    if (inputs[0].value === "" || !Number.isFinite(v) || v < metric.range[0] || v > metric.range[1]) return;
+    addEntry(metric, { v });
+  }
+  inputs.forEach((i) => (i.value = ""));
+  inputs[0].blur();
+  flash(form.closest(".card"));
+}
+
+function addEntry(metric, data) {
+  entriesFor(metric.key).push({ t: new Date().toISOString(), ...data });
+  saveStore();
+  refreshCard(metric);
+}
+
+/* ------------------------------------------------------------ detail view */
+
+const detailEl = document.getElementById("detail");
+let detailKey = null;
+
+function openDetail(key) {
+  detailKey = key;
+  const metric = byKey[key];
+  document.getElementById("detail-title").textContent = metric.name;
+  document.getElementById("detail-range-note").textContent = metric.bandLabel
+    ? `${metric.bandLabel} — shown for context only.`
+    : (metric.daily === "sum" ? "One point per day (daily total)." : "");
+  renderDetail(metric);
+  detailEl.classList.remove("hidden");
+  detailEl.scrollTop = 0;
+}
+
+function renderDetail(metric) {
+  const chartWrap = document.getElementById("detail-chart");
+  chartWrap.replaceChildren(renderChart(metric, chartSeries(metric, 30), 360, 190, true));
+
+  const list = document.getElementById("detail-list");
+  list.replaceChildren();
+  const all = entriesFor(metric.key);
+  const recent = all.slice(-30).reverse();
+  for (const e of recent) {
+    const li = document.createElement("li");
+    const label = document.createElement("span");
+    label.innerHTML = `<strong>${fmtValue(metric, e)}</strong> ${metric.unit} ` +
+      `<span class="entry-when">${fmtWhen(e.t)}</span>`;
+    const del = document.createElement("button");
+    del.className = "entry-del";
+    del.textContent = "Delete";
+    del.addEventListener("click", () => {
+      const idx = all.indexOf(e);
+      if (idx >= 0) all.splice(idx, 1);
+      saveStore();
+      renderDetail(metric);
+      refreshCard(metric);
+    });
+    li.appendChild(label);
+    li.appendChild(del);
+    list.appendChild(li);
+  }
+  if (recent.length === 0) {
+    const li = document.createElement("li");
+    li.textContent = "No entries yet.";
+    list.appendChild(li);
+  }
+}
+
+document.getElementById("detail-back").addEventListener("click", () => {
+  detailEl.classList.add("hidden");
+  detailKey = null;
+});
+
+/* ---------------------------------------------------------- export/import */
+
+document.getElementById("export-btn").addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify(store, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `health-log-${dayOf(new Date().toISOString())}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+document.getElementById("import-file").addEventListener("change", (ev) => {
+  const file = ev.target.files[0];
+  if (!file) return;
+  file.text().then((text) => {
+    try {
+      const data = JSON.parse(text);
+      if (!data || typeof data.entries !== "object") throw new Error("bad shape");
+      store.entries = data.entries;
+      saveStore();
+      METRICS.forEach(refreshCard);
+      if (detailKey) renderDetail(byKey[detailKey]);
+    } catch (e) {
+      alert("That file doesn't look like a Health Log export.");
+    }
+    ev.target.value = "";
+  });
+});
+
+/* ----------------------------------------------------------------- boot */
+
+document.getElementById("today-label").textContent = new Date().toLocaleDateString(undefined, {
+  weekday: "long", day: "numeric", month: "long",
+});
+
+METRICS.forEach(buildCard);
+METRICS.forEach(refreshCard);
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js");
+}
