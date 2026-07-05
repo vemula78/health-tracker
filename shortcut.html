@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Build the Health Sync shortcut</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <style>
+    .guide { padding: 10px 14px calc(30px + env(safe-area-inset-bottom)); max-width: 640px; margin: 0 auto; }
+    .guide p, .guide li { font-size: 15px; line-height: 1.55; }
+    .lede { color: var(--muted); }
+    .step { position: relative; padding-left: 46px; }
+    .step-num {
+      position: absolute; left: 14px; top: 13px;
+      width: 24px; height: 24px; border-radius: 50%;
+      background: var(--accent); color: #fff;
+      font-size: 14px; font-weight: 700; line-height: 24px; text-align: center;
+    }
+    .step h3 { margin: 0 0 6px; font-size: 16px; }
+    .step p { margin: 6px 0; }
+    .step ul { margin: 6px 0; padding-left: 18px; }
+    .action-name {
+      display: inline-block; background: var(--bg); border: 1px solid var(--line);
+      border-radius: 7px; padding: 2px 8px; font-weight: 600; font-size: 14px;
+    }
+    code, .key {
+      font-family: ui-monospace, Menlo, monospace; font-size: 13.5px;
+      background: var(--bg); border: 1px solid var(--line);
+      border-radius: 6px; padding: 1px 6px;
+    }
+    .key { color: var(--accent); font-weight: 600; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+    .key.copied { background: var(--band); }
+    table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+    th, td { text-align: left; font-size: 14px; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 600; }
+    pre {
+      background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+      padding: 10px; font-size: 12.5px; overflow-x: auto; line-height: 1.5;
+    }
+    .tip { background: var(--band); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+    .back-link { display: inline-block; margin: 4px 0 2px; }
+  </style>
+</head>
+<body>
+  <div class="guide">
+    <a class="back-link link-btn" href="./">&larr; Health Log</a>
+    <h1>Health Sync shortcut</h1>
+    <p class="lede">A one-tap iOS Shortcut that copies today's Apple Health data
+    (including everything your Watch recorded) to the clipboard as JSON, ready for
+    the <strong>Health sync</strong> screen in Health Log. Build it once — about
+    5 minutes. Tap any <span class="key" data-copy="steps">key name</span> on this
+    page to copy it.</p>
+
+    <div class="card step"><span class="step-num">1</span>
+      <h3>Create the shortcut</h3>
+      <p>Open the <strong>Shortcuts</strong> app &rarr; tap <strong>+</strong> &rarr;
+      rename it <strong>Health Sync</strong> (tap the title at the top).</p>
+    </div>
+
+    <div class="card step"><span class="step-num">2</span>
+      <h3>Today's steps</h3>
+      <p>Add the action <span class="action-name">Find Health Samples</span>
+      (search "health samples"). Configure it:</p>
+      <ul>
+        <li>Tap <strong>Add Filter</strong> &rarr; <strong>Type</strong> is <strong>Steps</strong></li>
+        <li>Tap <strong>Add Filter</strong> again &rarr; <strong>Start Date</strong> is <strong>today</strong></li>
+      </ul>
+      <p>Then add <span class="action-name">Calculate Statistics</span> directly below:
+      Operation <strong>Sum</strong>, Input <strong>Health Samples</strong>.</p>
+    </div>
+
+    <div class="card step"><span class="step-num">3</span>
+      <h3>Distance, energy, exercise</h3>
+      <p>Repeat step 2 three more times (each: Find Health Samples with the two
+      filters, then Calculate Statistics &rarr; Sum) for these types:</p>
+      <ul>
+        <li><strong>Walking + Running Distance</strong></li>
+        <li><strong>Active Energy</strong></li>
+        <li><strong>Exercise Minutes</strong></li>
+      </ul>
+      <p><em>Tip:</em> long-press an action &rarr; <strong>Duplicate</strong> to copy
+      the pair, then just change the Type filter.</p>
+    </div>
+
+    <div class="card step"><span class="step-num">4</span>
+      <h3>Resting heart rate</h3>
+      <p>Once more: <span class="action-name">Find Health Samples</span> with Type
+      <strong>Resting Heart Rate</strong> + Start Date is today, then
+      <span class="action-name">Calculate Statistics</span> with Operation
+      <strong>Average</strong>.</p>
+    </div>
+
+    <div class="card step"><span class="step-num">5</span>
+      <h3>Workouts <span style="color:var(--muted);font-weight:400">(optional)</span></h3>
+      <p>Add <span class="action-name">Find Workouts</span> with filter
+      <strong>Start Date</strong> is <strong>today</strong>. Then:</p>
+      <ul>
+        <li>Add <span class="action-name">Repeat with Each</span> (input: Workouts)</li>
+        <li>Inside the repeat, add a <span class="action-name">Text</span> action containing
+        three magic variables from <strong>Repeat Item</strong>, separated by pipes:<br>
+        <code>Activity Type|Duration|Total Active Energy</code><br>
+        (tap each blue variable token to insert it; set Duration's unit to minutes if asked)</li>
+        <li>After <strong>End Repeat</strong>, add <span class="action-name">Combine Text</span>:
+        combine <strong>Repeat Results</strong> with <strong>New Lines</strong></li>
+      </ul>
+      <p>Skip this step entirely if you don't want workouts — the importer doesn't mind.</p>
+    </div>
+
+    <div class="card step"><span class="step-num">6</span>
+      <h3>Today's date</h3>
+      <p>Add <span class="action-name">Format Date</span> (it inserts Current Date
+      automatically). Set Date Format to <strong>Custom</strong> and type exactly:
+      <code>yyyy-MM-dd</code></p>
+    </div>
+
+    <div class="card step"><span class="step-num">7</span>
+      <h3>Build the dictionary</h3>
+      <p>Add a <span class="action-name">Dictionary</span> action and create one
+      <strong>Text</strong> item per row below. For each value, tap the field &rarr;
+      <strong>Select Magic Variable</strong> and pick the matching result from the
+      actions above.</p>
+      <table>
+        <tr><th>Key (tap to copy)</th><th>Value (magic variable)</th></tr>
+        <tr><td><span class="key" data-copy="date">date</span></td><td>Formatted Date (step 6)</td></tr>
+        <tr><td><span class="key" data-copy="steps">steps</span></td><td>Statistics from step 2</td></tr>
+        <tr><td><span class="key" data-copy="distanceKm">distanceKm</span></td><td>Statistics — distance sum</td></tr>
+        <tr><td><span class="key" data-copy="activeEnergyKcal">activeEnergyKcal</span></td><td>Statistics — active energy sum</td></tr>
+        <tr><td><span class="key" data-copy="exerciseMin">exerciseMin</span></td><td>Statistics — exercise minutes sum</td></tr>
+        <tr><td><span class="key" data-copy="restingHR">restingHR</span></td><td>Statistics — resting HR average</td></tr>
+        <tr><td><span class="key" data-copy="workoutsText">workoutsText</span></td><td>Combined Text (step 5, if built)</td></tr>
+      </table>
+      <p>Skip any row you're not tracking — missing keys are simply ignored.</p>
+    </div>
+
+    <div class="card step"><span class="step-num">8</span>
+      <h3>Copy as JSON</h3>
+      <p>Add <span class="action-name">Get Text from Input</span> (input: the
+      Dictionary — this turns it into JSON text), then
+      <span class="action-name">Copy to Clipboard</span>. Done — tap the shortcut
+      to test it.</p>
+    </div>
+
+    <div class="card step"><span class="step-num">9</span>
+      <h3>First run &amp; daily use</h3>
+      <p>The first run asks permission to read each Health data type — allow each
+      once. The clipboard should then hold something like:</p>
+      <pre>{"date":"2026-07-05","steps":"8,234 count",
+"distanceKm":"6.2 km","activeEnergyKcal":"512 kcal",
+"exerciseMin":"34 min","restingHR":"58 count/min",
+"workoutsText":"Running|32 min|310 kcal"}</pre>
+      <p>Units and commas in the values are fine — the importer strips them.
+      Then open <strong>Health Log</strong> &rarr; <strong>Health sync</strong> &rarr;
+      <strong>Paste from clipboard &amp; import</strong>. Re-syncing the same day
+      updates it — no duplicates.</p>
+    </div>
+
+    <div class="tip">
+      <strong>Make it effortless:</strong> add the shortcut to your home screen next
+      to Health Log (shortcut settings &rarr; Add to Home Screen), or set up an
+      automation (Shortcuts &rarr; Automation &rarr; Time of Day, e.g. 9&nbsp;pm,
+      "Run Immediately") so the day's data is already on the clipboard every evening.
+    </div>
+
+    <p class="disclaimer" style="margin-top:14px">Exact action and filter names can
+    vary slightly between iOS versions. If a sum comes back empty, check that the
+    Start Date filter says "is today" and that the data type has permission in
+    Settings &rarr; Privacy &amp; Security &rarr; Health.</p>
+  </div>
+
+  <script>
+    for (const el of document.querySelectorAll(".key")) {
+      el.addEventListener("click", () => {
+        navigator.clipboard.writeText(el.dataset.copy).then(() => {
+          el.classList.add("copied");
+          setTimeout(() => el.classList.remove("copied"), 800);
+        });
+      });
+    }
+  </script>
+</body>
+</html>
